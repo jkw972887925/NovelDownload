@@ -1,0 +1,166 @@
+# -*- coding:utf-8 -*-
+from urllib import request
+from bs4 import BeautifulSoup
+from functools import reduce
+import getopt,sys,re
+
+__author__ = 'Jiang Raymond'
+
+url_file = ""
+output_file = "default.txt"
+origin_address = ""
+Print_Log = False
+decode_Set = 'gbk'
+
+ChineseNumber = (('十',''),('百',''),('千',''),('零','0'),('一','1'),('二','2'),('三','3'),('四','4'),('五','5'),('六','6'),('七','7'),('八','8'),('九','9'))
+DIGITS = {'0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9}
+def pr(txt):
+    if Print_Log == True:
+        print(txt)
+
+def CToN(string):
+    RePage = re.compile('([一二三四五六七八九零十百千0-9]+)')
+    Page = RePage.findall(string)
+    #print(Page)
+    if Page:
+        TargetString = Page[0]
+        TargetString = TargetString.replace(' ','')
+        #print(TargetString)
+        if TargetString == '十':
+            TargetString = '10'
+        elif TargetString[0] == '十':
+            TargetString = '1' + TargetString[1:]
+        LastPosition = len(TargetString) - 1
+        ch = TargetString[LastPosition]
+        DepriveString = TargetString[:LastPosition]
+        #print(DepriveString)
+        if ch == '十' or ch == '拾':
+            TargetString = DepriveString + '0'
+        elif ch == '百' or ch == '佰':
+            TargetString = DepriveString + '00'
+        elif ch == '千' or ch == '仟':
+            TargetString = DepriveString + '000'
+        for i,j in ChineseNumber:
+            TargetString = TargetString.replace(i,j)
+        return reduce(lambda a,b: a*10 + b,map(lambda x:DIGITS[x],TargetString))
+    return -1
+
+def getWebPage(url):
+    pr('     Download Page:' + url)
+    req = request.Request(url)
+    req.add_header('User-Agent', 'Mozilla/6.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/8.0 Mobile/10A5376e Safari/8536.25')
+    with request.urlopen(req) as urlReqfile:
+        global url_file
+        url_code = urlReqfile.read().decode(decode_Set)
+    return url_code
+
+class CommandLine(object):
+    def command_h(self, value):
+        pr('call h')
+        print('''\nCommand:\n
+        ---------------------------------------------\n
+        Command Name | Explanation       | Addition  \n
+        ---------------------------------------------\n
+        h            | Get help          | None      \n
+        u            | Get url           | urlAddress\n
+        l            | Print log         | None      \n
+        c            | Set Webpage Decode| None      \n
+        ---------------------------------------------\n
+        ''')
+    def command_l(self,value):
+        global Print_Log
+        Print_Log = True
+    def command_u(self, value):
+        pr('call u')
+        #!!!
+        #value = r'https://www.biquge5.com/24_24562/'
+        #!!!
+        if value.find('http')==-1:
+            value = r'http://' + value
+        pr(value)
+        global origin_address
+        origin_address = value
+
+    def command_c(self,value):
+        global decode_Set
+        decode_Set = value
+    def command_f(self,value):
+        pr('call f')
+        if value:
+            global output_file
+            output_file = value
+        else:
+            print('Wrong!')
+
+class WebpageSolve(object):
+    def __init__(self):
+        self.soup = BeautifulSoup(url_file,features="html.parser")
+
+    def abstruct_Context(self, urlAddress, name):
+        pr('call abstruct_Context')
+        pr(urlAddress)
+        txt = '\n\n\n' + name + '\n'
+        Context_Number = re.compile('/(\\d*?)\.html')
+        next_page = Context_Number.findall(urlAddress)[0]
+        next_page = next_page + '.html'
+        while next_page:
+            next_address = origin_address + next_page
+            Context_File = getWebPage(next_address)
+            Context_Soup = BeautifulSoup(Context_File,features = "html.parser")
+            temporary_txt = Context_Soup.find("div",id = "content").get_text()
+            temporary_txt = temporary_txt.replace('\xa0\xa0','\n')
+            temporary_txt = temporary_txt.replace('\xa0',' ')
+            txt = txt + temporary_txt
+            next_page = Context_Soup.find('a',text = '下一页')
+            if next_page:
+                next_page = next_page.get('href')
+        with open(output_file,'a',encoding = decode_Set) as f:
+            f.write(txt)
+
+    def abstruct_A(self):
+        pr('Call abstruct_A')
+        pr(origin_address)
+        Valid_Number = re.compile('/(\\d*?)/$')
+        pr(Valid_Number.findall(origin_address)[0])
+        TxtCompile = re.compile('.*?/'+Valid_Number.findall(origin_address)[0]+'/.+?')
+        TxtList = []
+        for item in self.soup.find_all('a'):
+            if item.get('href'):
+                #pr(item.get('href'))
+                if TxtCompile.match(item.get('href')) :
+                    TxtList.append((item.string,item.get('href')))#,CToN(item.string)))
+        #TxtList.sort(key = lambda x:x[2])
+        Rewrite = open(output_file,'w',encoding = decode_Set)
+        Rewrite.write('Generated by Raymond Jiang.')
+        Rewrite.close()
+        pr(TxtList)
+        current_Download = 0
+        for i,j in TxtList:#,k in TxtList:
+            pr('In for')
+            current_Download = current_Download + 1
+            Print_string = 'Current Downloading: ' + i + '      Progress: '
+            Progress_ratio = (current_Download * 10) // len(TxtList)
+            Print_string = Print_string + '>' * (Progress_ratio) + '-' * (10 - Progress_ratio) + ' (' + str(current_Download) + '/' + str(len(TxtList)) + ')'
+            print(Print_string)
+            self.abstruct_Context(j,i)
+
+def main():
+    try:
+        opts, args = getopt.getopt(sys.argv[1:],"hu:f:lc:")
+    except Exception as e:
+        print('Error!')
+    finally:
+        print('\n\n\nNovel Download Small Tool(made by Raymond Jiang)\n\n\n')
+    pr(opts)
+    commandSet = CommandLine()
+    for item in opts:
+        command = item[0].replace('-','_')
+        func = getattr(commandSet,'command' + command)
+        func(item[1])
+    global url_file
+    url_file = getWebPage(origin_address)
+    SolvedWebpage = WebpageSolve()
+    SolvedWebpage.abstruct_A()
+
+if __name__ == '__main__':
+    main()
